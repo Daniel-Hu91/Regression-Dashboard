@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 import os
 
-st.set_page_config(page_title="Data Cleaning App", layout="wide")
-st.title("Data Cleaning Dashboard")
+st.set_page_config(page_title="Data Cleaning", layout="wide")
+st.title("Data Cleaning")
 
 def load_file(uploaded_file):
     if uploaded_file.name.endswith(".csv"):
