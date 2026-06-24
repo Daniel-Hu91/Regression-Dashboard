@@ -27,7 +27,9 @@ def clear_regression_state():
         "linear_outlier_counts",
         "residual_z_threshold",
         "remove_only_upper_outliers",
-        "years_omit_input"
+        "years_omit_input",
+        "time_residual_z_threshold",
+        "time_remove_only_upper_outliers"
     ]
     for key in keys_to_clear:
         if key in st.session_state:
@@ -35,24 +37,6 @@ def clear_regression_state():
 
     st.session_state["regression_uploader_key"] += 1
     st.rerun()
-
-
-def remove_outliers_iqr(df, columns):
-    filtered_df = df.copy()
-
-    for col in columns:
-        q1 = filtered_df[col].quantile(0.25)
-        q3 = filtered_df[col].quantile(0.75)
-        iqr = q3 - q1
-
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
-
-        filtered_df = filtered_df[
-            (filtered_df[col] >= lower_bound) & (filtered_df[col] <= upper_bound)
-        ]
-
-    return filtered_df
 
 
 def load_uploaded_file(uploaded_file):
@@ -101,6 +85,35 @@ def parse_years_to_omit(year_input):
     return sorted(years)
 
 
+def remove_outliers_by_residuals(df, x_col, y_col, z_threshold=2.0, upper_only=False):
+    df = df.copy()
+
+    if len(df) < 3:
+        return df
+
+    X = sm.add_constant(df[[x_col]])
+    y = df[y_col]
+
+    model = sm.OLS(y, X).fit()
+
+    df["predicted_initial"] = model.predict(X)
+    df["residual_initial"] = df[y_col] - df["predicted_initial"]
+
+    resid_std = df["residual_initial"].std()
+
+    if resid_std == 0 or pd.isna(resid_std):
+        df["residual_z"] = 0
+    else:
+        df["residual_z"] = df["residual_initial"] / resid_std
+
+    if upper_only:
+        df_clean = df[df["residual_z"] <= z_threshold].copy()
+    else:
+        df_clean = df[df["residual_z"].abs() <= z_threshold].copy()
+
+    return df_clean
+
+
 st.write("Use the tabs below to choose a regression type.")
 
 tab1, tab2 = st.tabs(["Time Trend Regression", "Linear Regression"])
@@ -122,8 +135,22 @@ with tab1:
     )
 
     remove_outliers_time = st.checkbox(
-        "Remove outliers from value before time trend regression",
+        "Remove outliers using residuals before time trend regression",
         key="remove_outliers_time"
+    )
+
+    time_residual_z_threshold = st.number_input(
+        "Time trend residual z-score threshold",
+        min_value=0.1,
+        value=2.0,
+        step=0.1,
+        key="time_residual_z_threshold"
+    )
+
+    time_remove_only_upper_outliers = st.checkbox(
+        "Time trend: remove only upper residual outliers",
+        value=False,
+        key="time_remove_only_upper_outliers"
     )
 
     if time_file is not None:
@@ -153,17 +180,23 @@ with tab1:
 
                     before_rows = len(reg_df)
 
+                    reg_df["time_numeric"] = reg_df["date"].map(pd.Timestamp.toordinal)
+
                     if remove_outliers_time:
-                        reg_df = remove_outliers_iqr(reg_df, ["value"])
+                        reg_df = remove_outliers_by_residuals(
+                            reg_df,
+                            x_col="time_numeric",
+                            y_col="value",
+                            z_threshold=time_residual_z_threshold,
+                            upper_only=time_remove_only_upper_outliers
+                        )
 
                     after_rows = len(reg_df)
 
                     if len(reg_df) < 2:
                         st.error("Not enough valid rows to run regression.")
                     else:
-                        reg_df["time_numeric"] = reg_df["date"].map(pd.Timestamp.toordinal)
-
-                        X = sm.add_constant(reg_df["time_numeric"])
+                        X = sm.add_constant(reg_df[["time_numeric"]])
                         y = reg_df["value"]
 
                         model = sm.OLS(y, X).fit()
@@ -174,7 +207,7 @@ with tab1:
                         st.subheader("Regression Summary")
                         if remove_outliers_time:
                             st.write(
-                                f"Outlier removal applied. Rows before: {before_rows}, rows after: {after_rows}"
+                                f"Residual-based outlier removal applied. Rows before: {before_rows}, rows after: {after_rows}"
                             )
                         st.text(model.summary())
 
@@ -235,10 +268,16 @@ with tab2:
         key="years_omit_input"
     )
 
+    remove_outliers_linear = st.checkbox(
+        "Remove outliers using residuals before linear regression",
+        value=True,
+        key="remove_outliers_linear"
+    )
+
     residual_z_threshold = st.number_input(
         "Residual z-score threshold for outlier removal",
         min_value=0.1,
-        value=0.5,
+        value=2.0,
         step=0.1,
         key="residual_z_threshold"
     )
@@ -315,6 +354,21 @@ with tab2:
 
                             for year, year_df in merged_df.groupby("year"):
                                 year_df = year_df.copy()
+                                before_year_rows = len(year_df)
+
+                                if len(year_df) < 2:
+                                    continue
+
+                                if remove_outliers_linear and len(year_df) >= 3:
+                                    year_df = remove_outliers_by_residuals(
+                                        year_df,
+                                        x_col="x",
+                                        y_col="y",
+                                        z_threshold=residual_z_threshold,
+                                        upper_only=remove_only_upper_outliers
+                                    )
+
+                                after_year_rows = len(year_df)
 
                                 if len(year_df) < 2:
                                     continue
@@ -326,7 +380,9 @@ with tab2:
 
                                 results.append({
                                     "Year": year,
-                                    "Observations": len(year_df),
+                                    "Observations Before Filtering": before_year_rows,
+                                    "Observations After Filtering": after_year_rows,
+                                    "Rows Removed": before_year_rows - after_year_rows,
                                     "Intercept": model_year.params.get("const", None),
                                     "Slope": model_year.params.get("x", None),
                                     "P-value": model_year.pvalues.get("x", None),
@@ -343,30 +399,25 @@ with tab2:
 
                         elif analysis_mode == "All Years Combined":
                             df_all = merged_df.copy()
+                            before_rows = len(df_all)
 
-                            X_initial = sm.add_constant(df_all[["x"]])
-                            y_initial = df_all["y"]
-
-                            initial_model = sm.OLS(y_initial, X_initial).fit()
-
-                            df_all["Fitted_Initial"] = initial_model.predict(X_initial)
-                            df_all["Residuals_Initial"] = y_initial - df_all["Fitted_Initial"]
-
-                            resid_std = df_all["Residuals_Initial"].std()
-                            if resid_std == 0 or pd.isna(resid_std):
-                                df_all["Residual_Z"] = 0
+                            if remove_outliers_linear:
+                                df_clean = remove_outliers_by_residuals(
+                                    df_all,
+                                    x_col="x",
+                                    y_col="y",
+                                    z_threshold=residual_z_threshold,
+                                    upper_only=remove_only_upper_outliers
+                                )
                             else:
-                                df_all["Residual_Z"] = df_all["Residuals_Initial"] / resid_std
+                                df_clean = df_all.copy()
 
-                            if remove_only_upper_outliers:
-                                df_clean = df_all[df_all["Residual_Z"] <= residual_z_threshold].copy()
-                            else:
-                                df_clean = df_all[df_all["Residual_Z"].abs() <= residual_z_threshold].copy()
+                            after_rows = len(df_clean)
 
                             st.session_state["linear_all_initial_df"] = df_all.copy()
                             st.session_state["linear_all_clean_df"] = df_clean.copy()
-                            st.session_state["linear_rows_before"] = len(df_all)
-                            st.session_state["linear_rows_after"] = len(df_clean)
+                            st.session_state["linear_rows_before"] = before_rows
+                            st.session_state["linear_rows_after"] = after_rows
 
             if "linear_analysis_mode_saved" in st.session_state:
                 saved_mode = st.session_state["linear_analysis_mode_saved"]
