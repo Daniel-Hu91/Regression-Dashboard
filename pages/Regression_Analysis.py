@@ -31,7 +31,6 @@ def clear_regression_state():
         "linear_clean_model",
         "linear_rows_before",
         "linear_rows_after",
-        "run_linear_regression",
         "years_omit_input",
         "ind_label_input",
         "dep_label_input",
@@ -45,7 +44,6 @@ def clear_regression_state():
         if key in st.session_state:
             del st.session_state[key]
 
-    # reset defaults explicitly
     st.session_state["years_omit_input"] = ""
     st.session_state["ind_label_input"] = ""
     st.session_state["dep_label_input"] = ""
@@ -54,9 +52,7 @@ def clear_regression_state():
     st.session_state["remove_only_upper_outliers"] = True
     st.session_state["linear_analysis_mode"] = "All Years Combined"
 
-    # force file uploader reset
     st.session_state["regression_uploader_key"] += 1
-
     st.rerun()
 
 
@@ -159,6 +155,24 @@ def make_scatter_plot(df, x_col, y_col, x_label, y_label, title):
     return fig
 
 
+def make_dual_axis_time_series(df, date_col, x_col, y_col, x_label, y_label, title):
+    fig, ax1 = plt.subplots(figsize=(10, 5))
+
+    ax1.plot(df[date_col], df[y_col], color="blue", label=y_label)
+    ax1.set_xlabel("Date")
+    ax1.set_ylabel(y_label, color="blue")
+    ax1.tick_params(axis="y", labelcolor="blue")
+
+    ax2 = ax1.twinx()
+    ax2.plot(df[date_col], df[x_col], color="green", label=x_label)
+    ax2.set_ylabel(x_label, color="green")
+    ax2.tick_params(axis="y", labelcolor="green")
+
+    plt.title(title)
+    fig.tight_layout()
+    return fig
+
+
 st.write("Use the tabs below to choose a regression type.")
 tab1, tab2 = st.tabs(["Time Trend Regression", "Linear Regression"])
 
@@ -167,7 +181,6 @@ tab1, tab2 = st.tabs(["Time Trend Regression", "Linear Regression"])
 # ---------------------------------------------------
 with tab1:
     st.subheader("Time Trend Regression")
-    st.info("This version excludes the time-series chart, per your latest request.")
 
     time_file = st.file_uploader(
         "Upload cleaned file for time trend regression",
@@ -221,6 +234,13 @@ with tab1:
                         ax1.set_ylabel("Value")
                         ax1.legend()
                         st.pyplot(fig1)
+
+                        st.subheader("Raw Time Series")
+                        fig_raw, ax_raw = plt.subplots()
+                        ax_raw.plot(reg_df["date"], reg_df["value"], color="blue")
+                        ax_raw.set_xlabel("Date")
+                        ax_raw.set_ylabel("Value")
+                        st.pyplot(fig_raw)
 
                         st.subheader("Residual Plot")
                         fig2, ax2 = plt.subplots()
@@ -295,14 +315,12 @@ with tab2:
         key="remove_only_upper_outliers"
     )
 
-    # only store uploaded dfs, do not auto-run regression
     if ind_file is not None:
         st.session_state["ind_df"] = standardize_columns(load_uploaded_file(ind_file))
 
     if dep_file is not None:
         st.session_state["dep_df"] = standardize_columns(load_uploaded_file(dep_file))
 
-    # store labels separately
     st.session_state["ind_label"] = ind_label_input
     st.session_state["dep_label"] = dep_label_input
 
@@ -486,6 +504,18 @@ with tab2:
                     )
                     st.pyplot(fig_orig)
 
+                    st.subheader("Original Time Series")
+                    fig_ts_orig = make_dual_axis_time_series(
+                        df_all.sort_values("date"),
+                        "date",
+                        "x",
+                        "y",
+                        ind_label,
+                        dep_label,
+                        "All Years Combined - Original Time Series"
+                    )
+                    st.pyplot(fig_ts_orig)
+
                     st.subheader("Cleaned Regression Summary")
                     st.text(clean_model.summary())
 
@@ -494,6 +524,18 @@ with tab2:
                         df_clean, "x", "y", ind_label, dep_label, "All Years Combined - Cleaned"
                     )
                     st.pyplot(fig_clean)
+
+                    st.subheader("Cleaned Time Series")
+                    fig_ts_clean = make_dual_axis_time_series(
+                        df_clean.sort_values("date"),
+                        "date",
+                        "x",
+                        "y",
+                        ind_label,
+                        dep_label,
+                        "All Years Combined - Cleaned Time Series"
+                    )
+                    st.pyplot(fig_ts_clean)
 
                     st.subheader("Residual Plot After Filtering")
                     fig4, ax4 = plt.subplots()
@@ -530,6 +572,17 @@ with tab2:
                         )
                         st.pyplot(fig_year_orig)
 
+                        fig_year_ts_orig = make_dual_axis_time_series(
+                            year_original_data[year].sort_values("date"),
+                            "date",
+                            "x",
+                            "y",
+                            ind_label,
+                            dep_label,
+                            f"{year} Original Time Series"
+                        )
+                        st.pyplot(fig_year_ts_orig)
+
                     st.markdown("---")
                     st.subheader("All Cleaned Year Graphs")
 
@@ -546,6 +599,17 @@ with tab2:
                             f"{year} Cleaned"
                         )
                         st.pyplot(fig_year_clean)
+
+                        fig_year_ts_clean = make_dual_axis_time_series(
+                            year_cleaned_data[year].sort_values("date"),
+                            "date",
+                            "x",
+                            "y",
+                            ind_label,
+                            dep_label,
+                            f"{year} Cleaned Time Series"
+                        )
+                        st.pyplot(fig_year_ts_clean)
 
         except Exception as e:
             st.error(f"Error: {e}")
