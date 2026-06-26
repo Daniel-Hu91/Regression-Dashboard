@@ -169,7 +169,7 @@ with tab1:
     time_residual_z_threshold = st.number_input(
         "Time trend residual z-score threshold",
         min_value=0.1,
-        value=2.0,
+        value=0.5,
         step=0.1,
         key="time_residual_z_threshold"
     )
@@ -292,8 +292,8 @@ with tab2:
         key=f"dep_file_{st.session_state['regression_uploader_key']}"
     )
 
-    ind_label_input = st.text_input("Independent variable label", value="Independent Variable")
-    dep_label_input = st.text_input("Dependent variable label", value="Dependent Variable")
+    ind_label_input = st.text_input("Independent variable label", value="")
+    dep_label_input = st.text_input("Dependent variable label", value="")
 
     analysis_mode = st.radio(
         "Choose analysis mode",
