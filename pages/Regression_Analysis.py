@@ -36,6 +36,8 @@ def clear_regression_state():
         "linear_all_clean_df",
         "linear_rows_before",
         "linear_rows_after",
+        "ind_label_input",
+        "dep_label_input"
     ]
     for key in keys_to_clear:
         if key in st.session_state:
