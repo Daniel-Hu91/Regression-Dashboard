@@ -48,7 +48,7 @@ def clear_regression_state():
     st.session_state["ind_label_input"] = ""
     st.session_state["dep_label_input"] = ""
     st.session_state["remove_outliers_linear"] = True
-    st.session_state["residual_z_threshold"] = 2.0
+    st.session_state["residual_z_threshold"] = 0.5
     st.session_state["remove_only_upper_outliers"] = True
     st.session_state["linear_analysis_mode"] = "All Years Combined"
 
@@ -102,7 +102,7 @@ def parse_years_to_omit(year_input):
     return sorted(years)
 
 
-def remove_outliers_by_residuals(df, x_col, y_col, z_threshold=2.0, upper_only=False):
+def remove_outliers_by_residuals(df, x_col, y_col, z_threshold=0.5, upper_only=False):
     df = df.copy()
 
     if len(df) < 3:
@@ -304,7 +304,7 @@ with tab2:
     residual_z_threshold = st.number_input(
         "Residual z-score threshold for outlier removal",
         min_value=0.1,
-        value=st.session_state.get("residual_z_threshold", 2.0),
+        value=st.session_state.get("residual_z_threshold", 0.5),
         step=0.1,
         key="residual_z_threshold"
     )
