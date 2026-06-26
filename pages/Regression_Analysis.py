@@ -29,7 +29,13 @@ def clear_regression_state():
         "remove_only_upper_outliers",
         "years_omit_input",
         "time_residual_z_threshold",
-        "time_remove_only_upper_outliers"
+        "time_remove_only_upper_outliers",
+        "ind_label",
+        "dep_label",
+        "linear_all_initial_df",
+        "linear_all_clean_df",
+        "linear_rows_before",
+        "linear_rows_after",
     ]
     for key in keys_to_clear:
         if key in st.session_state:
@@ -112,6 +118,27 @@ def remove_outliers_by_residuals(df, x_col, y_col, z_threshold=2.0, upper_only=F
         df_clean = df[df["residual_z"].abs() <= z_threshold].copy()
 
     return df_clean
+
+
+def plot_dual_axis_timeseries(df, date_col="date", x_col="x", y_col="y",
+                              x_label="Independent Variable",
+                              y_label="Dependent Variable",
+                              title="Time Series"):
+    fig, ax1 = plt.subplots()
+
+    ax1.plot(df[date_col], df[y_col], color="blue", label=y_label)
+    ax1.set_xlabel("Date")
+    ax1.set_ylabel(y_label, color="blue")
+    ax1.tick_params(axis="y", labelcolor="blue")
+
+    ax2 = ax1.twinx()
+    ax2.plot(df[date_col], df[x_col], color="green", label=x_label)
+    ax2.set_ylabel(x_label, color="green")
+    ax2.tick_params(axis="y", labelcolor="green")
+
+    plt.title(title)
+    fig.tight_layout()
+    return fig
 
 
 st.write("Use the tabs below to choose a regression type.")
@@ -220,6 +247,14 @@ with tab1:
                         ax1.legend()
                         st.pyplot(fig1)
 
+                        st.subheader("Raw Time Series")
+                        fig_raw, ax_raw = plt.subplots()
+                        ax_raw.plot(reg_df["date"], reg_df["value"], color="blue")
+                        ax_raw.set_xlabel("Date")
+                        ax_raw.set_ylabel("Value")
+                        ax_raw.set_title("Raw Time Series")
+                        st.pyplot(fig_raw)
+
                         st.subheader("Residual Plot")
                         fig2, ax2 = plt.subplots()
                         ax2.scatter(reg_df["date"], reg_df["residual"])
@@ -257,6 +292,9 @@ with tab2:
         key=f"dep_file_{st.session_state['regression_uploader_key']}"
     )
 
+    ind_label_input = st.text_input("Independent variable label", value="Independent Variable")
+    dep_label_input = st.text_input("Dependent variable label", value="Dependent Variable")
+
     analysis_mode = st.radio(
         "Choose analysis mode",
         ["All Years Combined", "Year-by-Year"],
@@ -290,14 +328,19 @@ with tab2:
 
     if ind_file is not None:
         st.session_state["ind_df"] = standardize_columns(load_uploaded_file(ind_file))
+        st.session_state["ind_label"] = ind_label_input
 
     if dep_file is not None:
         st.session_state["dep_df"] = standardize_columns(load_uploaded_file(dep_file))
+        st.session_state["dep_label"] = dep_label_input
 
     if "ind_df" in st.session_state and "dep_df" in st.session_state:
         try:
             ind_df = st.session_state["ind_df"].copy()
             dep_df = st.session_state["dep_df"].copy()
+
+            ind_label = st.session_state.get("ind_label", ind_label_input)
+            dep_label = st.session_state.get("dep_label", dep_label_input)
 
             st.write("Independent file preview:")
             st.write("First 5 rows:")
@@ -426,6 +469,9 @@ with tab2:
                     df_all = st.session_state["linear_all_initial_df"].copy()
                     df_clean = st.session_state["linear_all_clean_df"].copy()
 
+                    ind_label = st.session_state.get("ind_label", ind_label_input)
+                    dep_label = st.session_state.get("dep_label", dep_label_input)
+
                     st.subheader("Merged Data Preview")
                     st.write("First 5 rows:")
                     st.dataframe(df_clean.head())
@@ -470,10 +516,22 @@ with tab2:
                         ax3.scatter(df_clean["x"], df_clean["y"], label="Observed")
                         line_df = df_clean.sort_values("x")
                         ax3.plot(line_df["x"], line_df["Fitted_Clean"], color="red", label="Regression Line")
-                        ax3.set_xlabel("Independent Variable (x)")
-                        ax3.set_ylabel("Dependent Variable (y)")
+                        ax3.set_xlabel(ind_label)
+                        ax3.set_ylabel(dep_label)
                         ax3.legend()
                         st.pyplot(fig3)
+
+                        st.subheader("Time Series of Independent and Dependent Variables")
+                        fig_ts = plot_dual_axis_timeseries(
+                            df_clean.sort_values("date"),
+                            date_col="date",
+                            x_col="x",
+                            y_col="y",
+                            x_label=ind_label,
+                            y_label=dep_label,
+                            title="All Years Combined Time Series"
+                        )
+                        st.pyplot(fig_ts)
 
                         st.subheader("Residual Plot After Filtering")
                         fig4, ax4 = plt.subplots()
@@ -485,6 +543,8 @@ with tab2:
 
                 elif saved_mode == "Year-by-Year" and "linear_results_df" in st.session_state:
                     results_df = st.session_state["linear_results_df"]
+                    ind_label = st.session_state.get("ind_label", ind_label_input)
+                    dep_label = st.session_state.get("dep_label", dep_label_input)
 
                     st.subheader("Year-by-Year Regression Results")
                     st.dataframe(results_df)
@@ -519,16 +579,28 @@ with tab2:
                             ax5.scatter(selected_df["x"], selected_df["y"], label="Observed")
                             line_df = selected_df.sort_values("x")
                             ax5.plot(line_df["x"], line_df["predicted"], color="red", label="Regression Line")
-                            ax5.set_xlabel("Independent Variable (x)")
-                            ax5.set_ylabel("Dependent Variable (y)")
+                            ax5.set_xlabel(ind_label)
+                            ax5.set_ylabel(dep_label)
                             ax5.legend()
                             st.pyplot(fig5)
+
+                            st.subheader(f"Time Series for {selected_year}")
+                            fig_ts_year = plot_dual_axis_timeseries(
+                                selected_df.sort_values("date"),
+                                date_col="date",
+                                x_col="x",
+                                y_col="y",
+                                x_label=ind_label,
+                                y_label=dep_label,
+                                title=f"Time Series for {selected_year}"
+                            )
+                            st.pyplot(fig_ts_year)
 
                             st.subheader(f"Residual Plot for {selected_year}")
                             fig6, ax6 = plt.subplots()
                             ax6.scatter(selected_df["x"], selected_df["residual"])
                             ax6.axhline(0, color="red", linestyle="--")
-                            ax6.set_xlabel("Independent Variable (x)")
+                            ax6.set_xlabel(ind_label)
                             ax6.set_ylabel("Residual")
                             st.pyplot(fig6)
 
